@@ -1,0 +1,16 @@
+[package]
+name = "grobot"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.70"
+chrono = "0.4.24"
+crossbeam = "0.8.2"
+crossbeam-channel = "0.5.8"
+ctrlc = "3.2.5"
+dht22_pi = "1.0.0"
+ringbuffer = "0.13.0"
+rppal = "0.14.1"
