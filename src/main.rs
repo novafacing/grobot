@@ -3,6 +3,13 @@ use chrono::{DateTime, Local, Timelike};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use ctrlc::set_handler;
 use dht22_pi::{read as dht22_read, Reading};
+use log::{info, LevelFilter};
+use log4rs::{
+    append::console::ConsoleAppender,
+    config::{Appender, Root},
+    encode::pattern::PatternEncoder,
+    init_config, Config,
+};
 use ringbuffer::{AllocRingBuffer, RingBuffer, RingBufferExt, RingBufferWrite};
 use rppal::{
     gpio::Gpio,
@@ -20,7 +27,7 @@ const LIGHT_PIN: u8 = 26;
 // Pin for temp/humidity sensor
 const SENSOR_PIN: u8 = 4;
 // Number of readings to take from the sensor before starting up
-const INITIAL_SENSOR_READINGS: u8 = 9;
+const INITIAL_SENSOR_READINGS: u8 = 8;
 // Number of readings to take from the sensor each cycle
 const SENSOR_READINGS: u8 = 3;
 // Number of seconds to wait between sensor readings
@@ -42,7 +49,7 @@ struct Environment {
 impl Environment {
     pub fn new() -> Self {
         Self {
-            readings: AllocRingBuffer::with_capacity(9),
+            readings: AllocRingBuffer::with_capacity(INITIAL_SENSOR_READINGS as usize),
         }
     }
 
@@ -70,7 +77,11 @@ impl Environment {
             .map(|r| r.temperature)
             .collect::<Vec<_>>();
 
-        self.ctof(good_samples.iter().sum::<f32>() / good_samples.len() as f32)
+        let temp = self.ctof(good_samples.iter().sum::<f32>() / good_samples.len() as f32);
+
+        info!("Cleaned temperature reading: {}F", temp);
+
+        temp
     }
 
     pub fn humidity(&self) -> f32 {
@@ -92,7 +103,11 @@ impl Environment {
             .map(|r| r.humidity)
             .collect::<Vec<_>>();
 
-        good_samples.iter().sum::<f32>() / good_samples.len() as f32
+        let humidity = good_samples.iter().sum::<f32>() / good_samples.len() as f32;
+
+        info!("Cleaned humidity reading: {}%", humidity);
+
+        humidity
     }
 
     pub fn add_reading(&mut self, reading: Reading) {
@@ -101,6 +116,7 @@ impl Environment {
             && !reading.temperature.is_nan()
             && !reading.humidity.is_nan()
         {
+            info!("Added new sensor reading: {:?}", reading);
             self.readings.push(reading);
         }
     }
@@ -151,11 +167,20 @@ fn light(rx: Receiver<Message>) -> Result<()> {
     loop {
         match rx.recv()? {
             Message::Time(time) => {
+                info!("Light controller got time: {}", time);
                 if (time.hour() >= 6 && time.hour() <= 8)
                     || (time.hour() >= 19 && time.hour() <= 22)
                 {
+                    info!(
+                        "Time {:?} is in set lighting on ranges, enabling light",
+                        time
+                    );
                     light_pin_output.set_low();
                 } else {
+                    info!(
+                        "Time {:?} is out of set lighting on ranges, disabling light",
+                        time
+                    );
                     light_pin_output.set_high();
                 }
             }
@@ -163,18 +188,22 @@ fn light(rx: Receiver<Message>) -> Result<()> {
                 // Any environment related processing here
                 if temp >= THRESHOLD_TEMP_TOO_HIGH {
                     // Turn off lights if temp gets too high
+                    info!("Temperature {} above threshold, disabling light", temp);
                     light_pin_output.set_high();
                 } else if temp <= THRESHOLD_TEMP_TOO_LOW {
                     // Turn on lgiths if temp gets too low
+                    info!("Temperature {} below threshold, enabling light", temp);
                     light_pin_output.set_low();
                 }
 
                 if humidity >= THRESHOLD_HUMIDITY_TOO_HIGH {
+                    info!("Humidity {} above threshold, enabling light", humidity);
                     light_pin_output.set_low();
                 }
             }
             Message::Exit => {
                 // Exit the loop and the thread
+                info!("Received exit message on light thread, exiting");
                 break;
             }
         }
@@ -201,22 +230,35 @@ fn fan(rx: Receiver<Message>) -> Result<()> {
             Message::Time(time) => {
                 // Run fans for 10 mins at the top of the hour
                 if time.minute() <= 10 {
+                    info!(
+                        "Time {:?} is in first 10 minutes of the hour, running fans",
+                        time
+                    );
                     fan_pwm.set_duty_cycle(fan_power.as_duty_cycle())?;
+                } else {
+                    info!(
+                        "Time {:?} is not in the first 10 minutes of the hour, not running fans",
+                        time
+                    );
                 }
             }
             Message::Environment((temp, humidity)) => {
                 // Do something with env
                 if temp >= THRESHOLD_TEMP_TOO_HIGH {
+                    info!("Temperature {} over threshold, running fans", temp);
                     fan_pwm.set_duty_cycle(fan_power.as_duty_cycle())?;
                 } else if temp <= THRESHOLD_TEMP_TOO_LOW {
+                    info!("Temperature {} below threshold, disabling fans", temp);
                     fan_pwm.set_duty_cycle(0.0)?;
                 }
 
                 if humidity >= THRESHOLD_HUMIDITY_TOO_HIGH {
+                    info!("Humidity {} above threshold, running fans", humidity);
                     fan_pwm.set_duty_cycle(fan_power.as_duty_cycle())?;
                 }
             }
             Message::Exit => {
+                info!("Received exit message on fan thread, exiting");
                 break;
             }
         }
@@ -226,6 +268,22 @@ fn fan(rx: Receiver<Message>) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    let appender = ConsoleAppender::builder()
+        .encoder(Box::new(PatternEncoder::new(
+            "{h({l})} | {d(%Y-%m-%d %H:%M:%S)} | {m} [{f}]{n}",
+        )))
+        .build();
+
+    let config = Config::builder()
+        .appender(Appender::builder().build("console", Box::new(appender)))
+        .build(
+            Root::builder()
+                .appender("console")
+                .build(LevelFilter::Trace),
+        )?;
+
+    init_config(config)?;
+
     let (tx, rx): (Sender<Message>, Receiver<Message>) = unbounded();
 
     let term_tx = tx.clone();
@@ -240,6 +298,8 @@ fn main() -> Result<()> {
 
     let mut environment = Environment::new();
 
+    info!("Taking initial sensor readings");
+
     for _ in 0..INITIAL_SENSOR_READINGS {
         if let Ok(reading) = dht22_read(SENSOR_PIN) {
             environment.add_reading(reading);
@@ -250,10 +310,18 @@ fn main() -> Result<()> {
     let main_rx = rx;
 
     loop {
+        info!("Taking sensor readings on main thread");
+
         for _ in 0..SENSOR_READINGS {
             if let Ok(reading) = dht22_read(SENSOR_PIN) {
                 environment.add_reading(reading);
             }
+
+            if let Ok(Message::Exit) = main_rx.try_recv() {
+                info!("Got exit message on main thread, exiting");
+                break;
+            }
+
             sleep(Duration::from_secs_f32(SENSOR_READING_INTERVAL));
         }
 
@@ -262,17 +330,27 @@ fn main() -> Result<()> {
             environment.humidity(),
         )))?;
 
-        sleep(Duration::from_secs_f32(MAINTHREAD_CYCLE_INTERVAL));
-
-        tx.send(Message::Time(Local::now()))?;
-
         if let Ok(Message::Exit) = main_rx.try_recv() {
+            info!("Got exit message on main thread, exiting");
             break;
         }
+
+        info!("Sleeping for cycle interval");
+
+        sleep(Duration::from_secs_f32(MAINTHREAD_CYCLE_INTERVAL));
+
+        if let Ok(Message::Exit) = main_rx.try_recv() {
+            info!("Got exit message on main thread, exiting");
+            break;
+        }
+
+        tx.send(Message::Time(Local::now()))?;
     }
 
     light.join().expect("Could not join light thread").ok();
     fan.join().expect("Could not join fan thread").ok();
+
+    info!("grobot done, goodbye");
 
     Ok(())
 }
