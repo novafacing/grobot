@@ -15,10 +15,7 @@ use rppal::{
     gpio::Gpio,
     pwm::{Channel, Polarity, Pwm},
 };
-use std::{
-    thread::{sleep, spawn},
-    time::Duration,
-};
+use std::{process::exit, thread::spawn, time::Duration};
 
 // NF-F12 industialPPC Fan PWM Frequency
 const FAN_PWM_FREQUENCY: f64 = 25_000.0f64;
@@ -167,7 +164,8 @@ fn light(rx: Receiver<Message>) -> Result<()> {
     loop {
         match rx.recv()? {
             Message::Time(time) => {
-                info!("Light controller got time: {}", time);
+                info!("Light thread received time update with time {:?}", time);
+
                 if (time.hour() >= 6 && time.hour() <= 8)
                     || (time.hour() >= 19 && time.hour() <= 22)
                 {
@@ -186,6 +184,10 @@ fn light(rx: Receiver<Message>) -> Result<()> {
             }
             Message::Environment((temp, humidity)) => {
                 // Any environment related processing here
+                info!(
+                    "Light thread received environment update with temp {}F, humidity {}%",
+                    temp, humidity
+                );
                 if temp >= THRESHOLD_TEMP_TOO_HIGH {
                     // Turn off lights if temp gets too high
                     info!("Temperature {} above threshold, disabling light", temp);
@@ -229,6 +231,7 @@ fn fan(rx: Receiver<Message>) -> Result<()> {
         match rx.recv()? {
             Message::Time(time) => {
                 // Run fans for 10 mins at the top of the hour
+                info!("Fan thread received time update with time {:?}", time);
                 if time.minute() <= 10 {
                     info!(
                         "Time {:?} is in first 10 minutes of the hour, running fans",
@@ -240,10 +243,16 @@ fn fan(rx: Receiver<Message>) -> Result<()> {
                         "Time {:?} is not in the first 10 minutes of the hour, not running fans",
                         time
                     );
+                    fan_pwm.set_duty_cycle(0.0)?;
                 }
             }
             Message::Environment((temp, humidity)) => {
                 // Do something with env
+                info!(
+                    "Fan thread received environment update with temp {}F, humidity {}%",
+                    temp, humidity
+                );
+
                 if temp >= THRESHOLD_TEMP_TOO_HIGH {
                     info!("Temperature {} over threshold, running fans", temp);
                     fan_pwm.set_duty_cycle(fan_power.as_duty_cycle())?;
@@ -284,14 +293,18 @@ fn main() -> Result<()> {
 
     init_config(config)?;
 
-    let (tx, rx): (Sender<Message>, Receiver<Message>) = unbounded();
+    let (fan_tx, fan_rx): (Sender<Message>, Receiver<Message>) = unbounded();
+    let (light_tx, light_rx): (Sender<Message>, Receiver<Message>) = unbounded();
+    let (main_tx, main_rx): (Sender<Message>, Receiver<Message>) = unbounded();
 
-    let term_tx = tx.clone();
+    let term_txs = vec![fan_tx.clone(), light_tx.clone(), main_tx];
+    let txs = vec![fan_tx, light_tx];
 
-    set_handler(move || term_tx.send(Message::Exit).expect("Could not send exit"))?;
-
-    let light_rx = rx.clone();
-    let fan_rx = rx.clone();
+    set_handler(move || {
+        term_txs
+            .iter()
+            .for_each(|tx| tx.send(Message::Exit).expect("Could not send exit"))
+    })?;
 
     let light = spawn(|| light(light_rx));
     let fan = spawn(|| fan(fan_rx));
@@ -304,10 +317,14 @@ fn main() -> Result<()> {
         if let Ok(reading) = dht22_read(SENSOR_PIN) {
             environment.add_reading(reading);
         }
-        sleep(Duration::from_secs_f32(SENSOR_READING_INTERVAL));
-    }
 
-    let main_rx = rx;
+        if let Ok(Message::Exit) =
+            main_rx.recv_timeout(Duration::from_secs_f32(SENSOR_READING_INTERVAL))
+        {
+            info!("Got exit message on main thread before initialization was finished, exiting");
+            exit(1);
+        }
+    }
 
     loop {
         info!("Taking sensor readings on main thread");
@@ -317,18 +334,20 @@ fn main() -> Result<()> {
                 environment.add_reading(reading);
             }
 
-            if let Ok(Message::Exit) = main_rx.try_recv() {
+            if let Ok(Message::Exit) =
+                main_rx.recv_timeout(Duration::from_secs_f32(SENSOR_READING_INTERVAL))
+            {
                 info!("Got exit message on main thread, exiting");
                 break;
             }
-
-            sleep(Duration::from_secs_f32(SENSOR_READING_INTERVAL));
         }
 
-        tx.send(Message::Environment((
-            environment.temp(),
-            environment.humidity(),
-        )))?;
+        for tx in &txs {
+            tx.send(Message::Environment((
+                environment.temp(),
+                environment.humidity(),
+            )))?;
+        }
 
         if let Ok(Message::Exit) = main_rx.try_recv() {
             info!("Got exit message on main thread, exiting");
@@ -337,14 +356,16 @@ fn main() -> Result<()> {
 
         info!("Sleeping for cycle interval");
 
-        sleep(Duration::from_secs_f32(MAINTHREAD_CYCLE_INTERVAL));
-
-        if let Ok(Message::Exit) = main_rx.try_recv() {
+        if let Ok(Message::Exit) =
+            main_rx.recv_timeout(Duration::from_secs_f32(MAINTHREAD_CYCLE_INTERVAL))
+        {
             info!("Got exit message on main thread, exiting");
             break;
         }
 
-        tx.send(Message::Time(Local::now()))?;
+        for tx in &txs {
+            tx.send(Message::Time(Local::now()))?;
+        }
     }
 
     light.join().expect("Could not join light thread").ok();

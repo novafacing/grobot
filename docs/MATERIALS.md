@@ -1,0 +1,43 @@
+# Materials
+
+This is a list of materials you will need to build this entire project, sans plants.
+
+| Quantity | Name                                                                                                       | Link                                                                                                                                                                                                                 | Approximate Price (per QTY) |
+| -------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| 1        | Ikea Rudsta                                                                                                | [Link](https://www.ikea.com/us/en/p/rudsta-glass-door-cabinet-anthracite-50450137/)                                                                                                                                  | $200                        |
+| 1        | Raspberry Pi 3B+                                                                                           | [Link](https://www.adafruit.com/product/3775?src=raspberrypi)                                                                                                                                                        | $35                         |
+| 1        | Barrina Full Spectrum Grow Light (4x24w)                                                                   | [Link](https://barrina-led.com/products/barrina-grow-light-bulb-96w4-x-24w-600w-equivalent-full-spectrum-2ft-led-grow-light-2-row-v-shape-t8-integrated-led-grow-light-strips-plant-lights-for-indoor-plants-4-pack) | $60                         |
+| 2        | Noctua NF-F12 iPPC-2000 ip67 PWM Fans                                                                      | [Link](https://noctua.at/en/nf-f12-industrialppc-2000-pwm)                                                                                                                                                           | $28                         |
+| 1        | 8"x4"x3" Black Plastic Junction Box                                                                        | [Link](https://www.amazon.com/dp/B08P55BZDH?psc=1&ref=ppx_yo2ov_dt_b_product_details)                                                                                                                                | $10                         |
+| 1        | 12V Fan Power Supply                                                                                       | [Link](https://www.amazon.com/dp/B084JG4619?psc=1&ref=ppx_yo2ov_dt_b_product_details)                                                                                                                                | $8                          |
+| 2        | PWM Fan Splitter Cable                                                                                     | [Link](https://www.amazon.com/dp/B07F8LV1BY?psc=1&ref=ppx_yo2ov_dt_b_product_details)                                                                                                                                | $10                         |
+| 1        | Pack Black Magnetic Hooks                                                                                  | [Link](https://www.amazon.com/dp/B09V4S3GSR?psc=1&ref=ppx_yo2ov_dt_b_product_details)                                                                                                                                | $10                         |
+| 1        | WaveShare Raspberry Pi Relay Module                                                                        | [Link](https://www.waveshare.com/rpi-relay-board.htm)                                                                                                                                                                | $15                         |
+| 1        | Pack Black Cable Glands                                                                                    | [Link](https://www.amazon.com/dp/B085NVDC3K?psc=1&ref=ppx_yo2ov_dt_b_product_details)                                                                                                                                | $10                         |
+| 1        | Pack Heat Shrink (Various Sizes)                                                                           | [Link](https://www.amazon.com/dp/B084GDLSCK?psc=1&ref=ppx_yo2ov_dt_b_product_details)                                                                                                                                | $10                         |
+| 1        | DHT22 Sensor                                                                                               | [Link](https://www.amazon.com/Gowoops-Temperature-Humidity-Measurement-Raspberry/dp/B073F472JL)                                                                                                                      | $11                         |
+| 1        | (Optional) Magnetic Spice Rack 2-Pack                                                                      | [Link](https://www.amazon.com/dp/B0BNLKBWSG?psc=1&ref=ppx_yo2ov_dt_b_product_details)                                                                                                                                | $15                         |
+| 1        | Assortment Pack Resistors (you only nead 1 10k Ohm resistor but this is a better deal than 100pk of those) | [Link](https://www.amazon.com/Resistor-Assorted-Resistors-Assortment-Experiments/dp/B07L851T3V)                                                                                                                      | $11                         |
+| 1        | Assorted Jumper Wires                                                                                      | [Link](https://www.amazon.com/EDGELEC-Optional-Breadboard-Assorted-Multicolored/dp/B07GCZ52WF)                                                                                                                       | $7                          |
+| 1        | Spool Rosin-Free Solder                                                                                    | [Link](https://www.amazon.com/OD0-02in-0-11lb-Precision-Electronics-Soldering/dp/B07XKHNN2Z)                                                                                                                         | $7                          |
+| 1        | Can Satin Finish Clear Enamel (Rustoleum)                                                                  | [Link](https://www.rustoleum.com/product-catalog/consumer-brands/stops-rust/clear-enamel?ls=285092&lc=Satin%20Clear)                                                                                                 | $7                          |
+| 1        | 16GB Micro SD Card for Raspberry Pi                                                                        | [Link](https://www.amazon.com/SanDisk-Ultra-SDSQUNS-016G-GN3MN-UHS-I-microSDHC/dp/B074B4P7KD/)                                                                                                                       |
+| 1        | Micro SD to USB Adapter                                                                                    | [Link](https://www.amazon.com/SanDisk-MobileMate-microSD-Card-Reader/dp/B07G5JV2B5/)                                                                                                                                 | $10                         |
+| 1        | Roll Velcro Cable Managers                                                                                 | [Link](https://www.lttstore.com/products/cable-ties)                                                                                                                                                                 | $15                         |
+
+
+
+# Tools
+
+You can likely make do with less tools than this, but if you want to have the easiest
+time, you'll need the following.
+
+- Multi-Bit Screwdriver (Flathead, Phillips, Mini Phillips)
+- Soldering Iron
+- Heat Gun
+- Drill (Cordless or not)
+- 3/4" Paddle Bit (for medium glands)
+- 1 1/4" Paddle Bit (for large glands)
+- Hot glue gun
+- Needle Nose Pliers
+- Wire Strippers
