@@ -194,7 +194,9 @@ async fn fan(mut rx: Receiver<Message>) -> Result<()> {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let sock = UdpSocket::bind(SocketAddrV4::new(args.listen_addr, args.port)).await?;
+    let bind_addr = SocketAddrV4::new(args.listen_addr, args.port);
+    let broadcast_addr = SocketAddrV4::new(Ipv4Addr::new(255, 255, 255, 255), args.port);
+    let sock = UdpSocket::bind(bind_addr).await?;
 
     sock.set_broadcast(true)?;
 
@@ -256,7 +258,8 @@ async fn main() -> Result<()> {
             sleep(Duration::from_secs_f32(SENSOR_READING_INTERVAL)).await;
         }
 
-        sock.send(environment.json()?.as_bytes()).await?;
+        sock.send_to(environment.json()?.as_bytes(), broadcast_addr)
+            .await?;
 
         tx.send(Message::Environment((
             environment.temp(),
