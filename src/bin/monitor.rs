@@ -26,6 +26,7 @@ async fn main() -> Result<()> {
     let args = Args::parse();
     let bind_addr = SocketAddrV4::new(args.listen_addr, args.port);
     let sock = UdpSocket::bind(bind_addr).await?;
+    sock.set_broadcast(true)?;
 
     loop {
         // Receive on the socket

@@ -258,8 +258,11 @@ async fn main() -> Result<()> {
             sleep(Duration::from_secs_f32(SENSOR_READING_INTERVAL)).await;
         }
 
-        sock.send_to(environment.json()?.as_bytes(), broadcast_addr)
-            .await?;
+        let msg = environment.json()?;
+
+        info!("Broadcasting sensor readings: '{}'", msg);
+
+        sock.send_to(msg.as_bytes(), broadcast_addr).await?;
 
         tx.send(Message::Environment((
             environment.temp(),
