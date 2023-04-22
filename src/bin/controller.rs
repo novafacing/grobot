@@ -194,9 +194,13 @@ async fn fan(mut rx: Receiver<Message>) -> Result<()> {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    let bind_addr = SocketAddrV4::new(args.listen_addr, args.port);
+    let bind_addr = SocketAddrV4::new(args.listen_addr, 0);
     let broadcast_addr = SocketAddrV4::new(Ipv4Addr::new(255, 255, 255, 255), args.port);
     let sock = UdpSocket::bind(bind_addr).await?;
+
+    info!("Listening on {}", bind_addr);
+    info!("Broadcasting to {}", broadcast_addr);
+    info!("Listening device: {:?}", sock.device()?);
 
     sock.set_broadcast(true)?;
 
