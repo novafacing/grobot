@@ -7,15 +7,14 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.70"
-chrono = "0.4.24"
+chrono = { version = "0.4.24", features = ["serde"] }
 clap = { version = "4.2.1", features = ["derive"] }
-crossbeam = "0.8.2"
-crossbeam-channel = "0.5.8"
-ctrlc = "3.2.5"
 dht22_pi = "1.0.0"
-log = "0.4.17"
-log4rs = "1.2.0"
 ringbuffer = "0.13.0"
 rppal = "0.14.1"
-serde = { version = "1.0.160", features = ["derive"] }
+serde = { version = "1.0.160", features = ["derive", "serde_derive"] }
+tokio = { version = "1.27.0", features = ["full"] }
 toml = "0.7.3"
+tracing = "0.1.37"
+tracing-appender = "0.2.2"
+tracing-subscriber = "0.3.16"

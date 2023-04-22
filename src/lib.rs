@@ -1,52 +1,53 @@
-use anyhow::{ensure, Error, Result};
-use chrono::{DateTime, Local, Timelike};
-use crossbeam_channel::{unbounded, Receiver, Sender};
-use ctrlc::set_handler;
+use std::{env, path::Path, sync::Arc};
+
+use anyhow::{bail, ensure, Context, Error, Result};
+use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Timelike};
 use dht22_pi::{read as dht22_read, Reading};
-use log::{info, LevelFilter};
-use log4rs::{
-    append::console::ConsoleAppender,
-    config::{Appender, Root},
-    encode::pattern::PatternEncoder,
-    init_config, Config,
-};
 use ringbuffer::{AllocRingBuffer, RingBuffer, RingBufferExt, RingBufferWrite};
-use rppal::{
-    gpio::Gpio,
-    pwm::{Channel, Polarity, Pwm},
-};
-use std::{process::exit, thread::spawn, time::Duration};
+use rppal::{gpio::OutputPin, pwm::Pwm};
+use serde::Deserialize;
+use tokio::{fs::File, io::AsyncReadExt};
+use toml::from_str;
+use tracing::{info, warn};
 
-// NF-F12 industialPPC Fan PWM Frequency
-const FAN_PWM_FREQUENCY: f64 = 25_000.0f64;
-// Pin for relay CH1
-const LIGHT_PIN: u8 = 26;
-// Pin for temp/humidity sensor
-const SENSOR_PIN: u8 = 4;
-// Number of readings to take from the sensor before starting up
-const INITIAL_SENSOR_READINGS: u8 = 8;
-// Number of readings to take from the sensor each cycle
-const SENSOR_READINGS: u8 = 3;
-// Number of seconds to wait between sensor readings
-const SENSOR_READING_INTERVAL: f32 = 4.0;
-// Number of seconds to wait between time/sensor readings
-const MAINTHREAD_CYCLE_INTERVAL: f32 = 90.0;
-
-// Threshold for "temp too high" to turn off lights and turn on fans
-const THRESHOLD_TEMP_TOO_HIGH: f32 = 82.0;
-// Threshold for "temp too low" to turn off fans and turn on lights
-const THRESHOLD_TEMP_TOO_LOW: f32 = 62.0;
-// Threshold for "humidity too high" to turn on lights and fans
-const THRESHOLD_HUMIDITY_TOO_HIGH: f32 = 80.0;
-
-struct Environment {
+pub struct Environment {
     readings: AllocRingBuffer<Reading>,
 }
 
+impl Default for Environment {
+    fn default() -> Self {
+        Self::with_readings(Environment::DEFAULT_INITIAL_READINGS)
+    }
+}
+
 impl Environment {
-    pub fn new() -> Self {
+    const DEFAULT_INITIAL_READINGS: usize = 8;
+
+    pub fn with_readings(initial_readings: usize) -> Self {
         Self {
-            readings: AllocRingBuffer::with_capacity(INITIAL_SENSOR_READINGS as usize),
+            readings: AllocRingBuffer::with_capacity(initial_readings),
+        }
+    }
+
+    /// Do the initial set of readings to fill the ring buffer
+    pub async fn init(&mut self, pin: u8) -> Result<()> {
+        for _ in 0..self.readings.capacity() {
+            if let Ok(reading) = dht22_read(pin) {
+                self.add_reading(reading);
+            } else {
+                warn!("Failed to read from sensor");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Do a single reading from the sensor,
+    pub async fn read(&mut self, pin: u8) {
+        if let Ok(reading) = dht22_read(pin) {
+            self.add_reading(reading);
+        } else {
+            warn!("Failed to read from sensor");
         }
     }
 
@@ -119,7 +120,8 @@ impl Environment {
     }
 }
 
-struct FanPower {
+#[derive(Debug, Clone)]
+pub struct FanPower {
     power: f64,
 }
 
@@ -144,234 +146,216 @@ impl FanPower {
     pub fn as_duty_cycle(&self) -> f64 {
         self.power
     }
+
+    fn parse_fan_power<'de, D>(deserializer: D) -> Result<FanPower, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = f64::deserialize(deserializer)?;
+        FanPower::try_from(s).map_err(serde::de::Error::custom)
+    }
 }
 
-enum Message {
-    // Local time
-    Time(DateTime<Local>),
-    // Temp and humidity
-    Environment((f32, f32)),
-    // Stop now
-    Exit,
+pub struct Light(OutputPin);
+
+impl Light {
+    pub fn new(pin: OutputPin) -> Self {
+        Self(pin)
+    }
+
+    pub fn on(&mut self) {
+        self.0.set_low();
+    }
+
+    pub fn off(&mut self) {
+        self.0.set_high();
+    }
 }
 
-fn light(rx: Receiver<Message>) -> Result<()> {
-    let gpio = Gpio::new()?;
-    let light_pin = gpio.get(LIGHT_PIN)?;
-    let mut light_pin_output = light_pin.into_output();
-    light_pin_output.set_high();
+pub struct Fan((Pwm, FanPower));
 
-    loop {
-        match rx.recv()? {
-            Message::Time(time) => {
-                info!("Light thread received time update with time {:?}", time);
-
-                if (time.hour() >= 6 && time.hour() <= 8)
-                    || (time.hour() >= 19 && time.hour() <= 22)
-                {
-                    info!(
-                        "Time {:?} is in set lighting on ranges, enabling light",
-                        time
-                    );
-                    light_pin_output.set_low();
-                } else {
-                    info!(
-                        "Time {:?} is out of set lighting on ranges, disabling light",
-                        time
-                    );
-                    light_pin_output.set_high();
-                }
-            }
-            Message::Environment((temp, humidity)) => {
-                // Any environment related processing here
-                info!(
-                    "Light thread received environment update with temp {}F, humidity {}%",
-                    temp, humidity
-                );
-                if temp >= THRESHOLD_TEMP_TOO_HIGH {
-                    // Turn off lights if temp gets too high
-                    info!("Temperature {} above threshold, disabling light", temp);
-                    light_pin_output.set_high();
-                } else if temp <= THRESHOLD_TEMP_TOO_LOW {
-                    // Turn on lgiths if temp gets too low
-                    info!("Temperature {} below threshold, enabling light", temp);
-                    light_pin_output.set_low();
-                }
-
-                if humidity >= THRESHOLD_HUMIDITY_TOO_HIGH {
-                    info!("Humidity {} above threshold, enabling light", humidity);
-                    light_pin_output.set_low();
-                }
-            }
-            Message::Exit => {
-                // Exit the loop and the thread
-                info!("Received exit message on light thread, exiting");
-                break;
-            }
-        }
+impl Fan {
+    pub fn new(pwm: Pwm, power: FanPower) -> Self {
+        Self((pwm, power))
     }
 
-    Ok(())
+    pub fn on(&mut self) -> Result<()> {
+        self.0 .0.set_duty_cycle(self.0 .1.as_duty_cycle())?;
+        Ok(())
+    }
+
+    pub fn off(&mut self) -> Result<()> {
+        self.0 .0.set_duty_cycle(0.0)?;
+        Ok(())
+    }
 }
 
-fn fan(rx: Receiver<Message>) -> Result<()> {
-    // Start up the fan at 0% power
-    let fan_pwm = Pwm::with_frequency(
-        Channel::Pwm0,
-        FAN_PWM_FREQUENCY,
-        0.00, // 75% Power
-        Polarity::Normal,
-        true,
-    )?;
-
-    // Fan power 75%
-    let fan_power = FanPower::try_from(75.0)?;
-
-    loop {
-        match rx.recv()? {
-            Message::Time(time) => {
-                // Run fans for 10 mins at the top of the hour
-                info!("Fan thread received time update with time {:?}", time);
-                if time.minute() <= 10 {
-                    info!(
-                        "Time {:?} is in first 10 minutes of the hour, running fans",
-                        time
-                    );
-                    fan_pwm.set_duty_cycle(fan_power.as_duty_cycle())?;
-                } else {
-                    info!(
-                        "Time {:?} is not in the first 10 minutes of the hour, not running fans",
-                        time
-                    );
-                    fan_pwm.set_duty_cycle(0.0)?;
-                }
-            }
-            Message::Environment((temp, humidity)) => {
-                // Do something with env
-                info!(
-                    "Fan thread received environment update with temp {}F, humidity {}%",
-                    temp, humidity
-                );
-
-                if temp >= THRESHOLD_TEMP_TOO_HIGH {
-                    info!("Temperature {} over threshold, running fans", temp);
-                    fan_pwm.set_duty_cycle(fan_power.as_duty_cycle())?;
-                } else if temp <= THRESHOLD_TEMP_TOO_LOW {
-                    info!("Temperature {} below threshold, disabling fans", temp);
-                    fan_pwm.set_duty_cycle(0.0)?;
-                }
-
-                if humidity >= THRESHOLD_HUMIDITY_TOO_HIGH {
-                    info!("Humidity {} above threshold, running fans", humidity);
-                    fan_pwm.set_duty_cycle(fan_power.as_duty_cycle())?;
-                }
-            }
-            Message::Exit => {
-                info!("Received exit message on fan thread, exiting");
-                break;
-            }
-        }
-    }
-
-    Ok(())
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Action {
+    On,
+    Off,
 }
 
-fn main() -> Result<()> {
-    let appender = ConsoleAppender::builder()
-        .encoder(Box::new(PatternEncoder::new(
-            "{h({l})} | {d(%Y-%m-%d %H:%M:%S)} | {m} [{f}]{n}",
-        )))
-        .build();
+#[derive(Deserialize, Debug, Clone)]
+pub struct Event {
+    #[serde(deserialize_with = "Event::parse_time")]
+    time: DateTime<Local>,
+    action: Action,
+}
 
-    let config = Config::builder()
-        .appender(Appender::builder().build("console", Box::new(appender)))
-        .build(
-            Root::builder()
-                .appender("console")
-                .build(LevelFilter::Trace),
-        )?;
+impl Event {
+    // Parse a time string in %H:%M format with strftime
+    fn parse_time<'de, D>(deserializer: D) -> Result<DateTime<Local>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let now = Local::now();
+        let now_date = now.format("%Y-%m-%d").to_string();
+        let s = String::deserialize(deserializer)?;
+        let time = NaiveDateTime::parse_from_str(&format!("{}T{}", now_date, s), "%Y-%m-%dT%H:%M")
+            .map_err(serde::de::Error::custom)?;
 
-    init_config(config)?;
+        let local = Local.from_local_datetime(&time).single().ok_or_else(|| {
+            serde::de::Error::custom(format!("Failed to convert {} to local time", time))
+        })?;
 
-    let (fan_tx, fan_rx): (Sender<Message>, Receiver<Message>) = unbounded();
-    let (light_tx, light_rx): (Sender<Message>, Receiver<Message>) = unbounded();
-    let (main_tx, main_rx): (Sender<Message>, Receiver<Message>) = unbounded();
+        Ok(local)
+    }
+}
 
-    let term_txs = vec![fan_tx.clone(), light_tx.clone(), main_tx];
-    let txs = vec![fan_tx, light_tx];
+#[derive(Deserialize, Debug, Clone)]
+pub struct FanConfig {
+    #[serde(deserialize_with = "FanPower::parse_fan_power")]
+    power: FanPower,
+    schedule: Vec<Event>,
+}
 
-    set_handler(move || {
-        term_txs
-            .iter()
-            .for_each(|tx| tx.send(Message::Exit).expect("Could not send exit"))
-    })?;
+#[derive(Deserialize, Debug, Clone)]
+pub struct LightConfig {
+    schedule: Vec<Event>,
+}
 
-    let light = spawn(|| light(light_rx));
-    let fan = spawn(|| fan(fan_rx));
+#[derive(Deserialize, Debug, Clone)]
+pub struct ThresholdConfig {
+    min_temp: f32,
+    min_humidity: f32,
+    max_temp: f32,
+    max_humidity: f32,
+}
 
-    let mut environment = Environment::new();
+#[derive(Deserialize, Debug, Clone)]
+pub struct Config {
+    fan: FanConfig,
+    light: LightConfig,
+    thresholds: ThresholdConfig,
+}
 
-    info!("Taking initial sensor readings");
+impl Config {
+    pub fn light_on(&mut self, time: &DateTime<Local>, environment: (f32, f32)) -> bool {
+        let (temp, humidity) = environment;
+        // Check if the light should be on at the given time by:
+        // * Sorting the schedule by time
+        // * Bucketing the schedule into pairs of on/off events
+        // * Checking if the time is between any of the on/off pairs
+        let light_on_schedule = self.light.schedule.chunks(2).any(|pair| {
+            let on = &pair[0];
+            let off = &pair[1];
 
-    for _ in 0..INITIAL_SENSOR_READINGS {
-        if let Ok(reading) = dht22_read(SENSOR_PIN) {
-            environment.add_reading(reading);
-        }
+            on.time.time() <= time.time() && off.time.time() > time.time()
+        });
 
-        if let Ok(Message::Exit) =
-            main_rx.recv_timeout(Duration::from_secs_f32(SENSOR_READING_INTERVAL))
-        {
-            info!("Got exit message on main thread before initialization was finished, exiting");
-            exit(1);
-        }
+        // Check if the light should be on due to the humidity
+        // If humidity is too high, we turn on to burn off the excess
+        // If temperature is too high, we turn off the light to prevent overheating
+        // If temperature is too low, we turn on the light to increase the temperature
+        let light_on_environment =
+            humidity > self.thresholds.max_humidity || temp < self.thresholds.min_temp;
+
+        let light_off_environment = temp > self.thresholds.max_temp;
+
+        (light_on_schedule || light_on_environment) && !light_off_environment
     }
 
-    loop {
-        info!("Taking sensor readings on main thread");
-
-        for _ in 0..SENSOR_READINGS {
-            if let Ok(reading) = dht22_read(SENSOR_PIN) {
-                environment.add_reading(reading);
-            }
-
-            if let Ok(Message::Exit) =
-                main_rx.recv_timeout(Duration::from_secs_f32(SENSOR_READING_INTERVAL))
-            {
-                info!("Got exit message on main thread, exiting");
-                break;
-            }
-        }
-
-        for tx in &txs {
-            tx.send(Message::Environment((
-                environment.temp(),
-                environment.humidity(),
-            )))?;
-        }
-
-        if let Ok(Message::Exit) = main_rx.try_recv() {
-            info!("Got exit message on main thread, exiting");
-            break;
-        }
-
-        info!("Sleeping for cycle interval");
-
-        if let Ok(Message::Exit) =
-            main_rx.recv_timeout(Duration::from_secs_f32(MAINTHREAD_CYCLE_INTERVAL))
-        {
-            info!("Got exit message on main thread, exiting");
-            break;
-        }
-
-        for tx in &txs {
-            tx.send(Message::Time(Local::now()))?;
-        }
+    pub fn light_off(&mut self, time: &DateTime<Local>, environment: (f32, f32)) -> bool {
+        !self.light_on(time, environment)
     }
 
-    light.join().expect("Could not join light thread").ok();
-    fan.join().expect("Could not join fan thread").ok();
+    pub fn fan_on(&mut self, time: &DateTime<Local>, environment: (f32, f32)) -> bool {
+        let (temp, humidity) = environment;
+        // Check if the fan should be on at the given time by:
+        // * Bucketing the schedule into pairs of on/off events
+        // * Checking if the time is between any of the on/off pairs
+        let fan_on_schedule = self.fan.schedule.chunks(2).any(|pair| {
+            let on = &pair[0];
+            let off = &pair[1];
 
-    info!("grobot done, goodbye");
+            on.time.time() <= time.time() && off.time.time() > time.time()
+        });
 
-    Ok(())
+        // Check if the fan should be on due to the humidity
+        // If humidity is too high, we turn on to circulate and lower humidity
+        // If humidity is too low, we turn off to avoid dehumidifying
+        // If temperature is too high, we turn on to circulate and lower temperature
+        // If temperature is too low, we turn off to avoid lowering it further
+        let fan_on_environment =
+            humidity > self.thresholds.max_humidity || temp > self.thresholds.max_temp;
+
+        let fan_off_environment =
+            humidity < self.thresholds.min_humidity || temp < self.thresholds.min_temp;
+
+        (fan_on_schedule || fan_on_environment) && !fan_off_environment
+    }
+
+    pub fn fan_off(&mut self, time: &DateTime<Local>, environment: (f32, f32)) -> bool {
+        !self.fan_on(time, environment)
+    }
+
+    pub fn fan_power(&self) -> FanPower {
+        self.fan.power.clone()
+    }
+
+    pub fn setup(&mut self) -> Result<()> {
+        // Sort the schedules by time ascending
+        self.light.schedule.sort_by(|a, b| a.time.cmp(&b.time));
+        self.fan.schedule.sort_by(|a, b| a.time.cmp(&b.time));
+
+        // Ensure the schedule is valid (this reduces to the same as checking open/close parens lol)
+        // We can start with either an on or off event, they just need to be balanced
+        let first_light = self
+            .light
+            .schedule
+            .first()
+            .context("Must have something in the schedule")?;
+
+        ensure!(
+            first_light.action == Action::On,
+            "Schedule must start with an On or Off event"
+        );
+
+        // Ensure the schedule is valid (this reduces to the same as checking open/close parens lol)
+        // We can start with either an on or off event, they just need to be balanced
+        let first_fan = self
+            .fan
+            .schedule
+            .first()
+            .context("Must have something in the schedule")?;
+
+        ensure!(
+            first_fan.action == Action::On,
+            "Schedule must start with an On or Off event"
+        );
+
+        Ok(())
+    }
+
+    pub async fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        // Use toml::from_str
+        let mut file = File::open(path).await?;
+        let mut s = String::new();
+        file.read_to_string(&mut s).await?;
+        let mut config: Config = from_str(&s)?;
+        config.setup()?;
+
+        Ok(config)
+    }
 }
