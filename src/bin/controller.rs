@@ -2,13 +2,18 @@ use anyhow::{bail, Result};
 use chrono::{DateTime, Local};
 use clap::Parser;
 use dht22_pi::read as dht22_read;
-use grobot::{Config, Environment, Fan, Light};
+use grobot::{Config, Environment, Fan, Light, PORT};
 use rppal::{
     gpio::Gpio,
     pwm::{Channel, Polarity, Pwm},
 };
-use std::{path::PathBuf, time::Duration};
+use std::{
+    net::{Ipv4Addr, SocketAddrV4},
+    path::PathBuf,
+    time::Duration,
+};
 use tokio::{
+    net::UdpSocket,
     signal::ctrl_c,
     spawn,
     sync::{
@@ -36,6 +41,8 @@ const SENSOR_READING_INTERVAL: f32 = 4.0;
 // Number of seconds to wait between time/sensor readings
 const MAINTHREAD_CYCLE_INTERVAL: f32 = 90.0;
 
+const BIND_ADDR: Ipv4Addr = Ipv4Addr::new(0, 0, 0, 0);
+
 #[derive(Parser)]
 struct Args {
     /// Path to a configuration file in TOML format. Examples of configurations can be found
@@ -44,6 +51,12 @@ struct Args {
     #[clap(short, long, default_value_t = Level::INFO)]
     /// Logging level
     log_level: Level,
+    #[clap(short, long, default_value_t = PORT)]
+    // Port
+    port: u16,
+    #[clap(short, long, default_value_t = BIND_ADDR)]
+    // Listen address
+    listen_addr: Ipv4Addr,
 }
 
 #[derive(Clone, Debug)]
@@ -181,6 +194,10 @@ async fn fan(mut rx: Receiver<Message>) -> Result<()> {
 async fn main() -> Result<()> {
     let args = Args::parse();
 
+    let sock = UdpSocket::bind(SocketAddrV4::new(args.listen_addr, args.port)).await?;
+
+    sock.set_broadcast(true)?;
+
     let config = Config::from_file(&args.config_file).await?;
 
     let file_appender = hourly("/var/log", "grobot.log");
@@ -238,6 +255,8 @@ async fn main() -> Result<()> {
 
             sleep(Duration::from_secs_f32(SENSOR_READING_INTERVAL)).await;
         }
+
+        sock.send(environment.json()?.as_bytes()).await?;
 
         tx.send(Message::Environment((
             environment.temp(),

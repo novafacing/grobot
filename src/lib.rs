@@ -1,14 +1,16 @@
-use std::path::Path;
-
 use anyhow::{ensure, Context, Error, Result};
 use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use dht22_pi::{read as dht22_read, Reading};
 use ringbuffer::{AllocRingBuffer, RingBuffer, RingBufferExt, RingBufferWrite};
 use rppal::{gpio::OutputPin, pwm::Pwm};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::to_string;
+use std::{collections::HashMap, path::Path};
 use tokio::{fs::File, io::AsyncReadExt};
 use toml::from_str;
 use tracing::{info, warn};
+
+pub const PORT: u16 = 8332;
 
 pub struct Environment {
     readings: AllocRingBuffer<Reading>,
@@ -22,6 +24,20 @@ impl Default for Environment {
 
 impl Environment {
     const DEFAULT_INITIAL_READINGS: usize = 8;
+
+    pub fn json(&self) -> Result<String> {
+        let temp = self.temp();
+        let humidity = self.humidity();
+
+        let content: HashMap<String, f32> = HashMap::from_iter([
+            ("temp".to_string(), temp),
+            ("humidity".to_string(), humidity),
+        ]);
+
+        let json = to_string(&content)?;
+
+        Ok(json)
+    }
 
     pub fn with_readings(initial_readings: usize) -> Self {
         Self {
@@ -357,5 +373,24 @@ impl Config {
         config.setup()?;
 
         Ok(config)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct NetworkUpdate {
+    // fan_power: f64,
+    // light_on: bool,
+    temp: f32,
+    humidity: f32,
+}
+
+impl NetworkUpdate {
+    pub fn new(/* fan_power: f64, light_on: bool, */ temp: f32, humidity: f32) -> Self {
+        Self {
+            // fan_power,
+            // light_on,
+            temp,
+            humidity,
+        }
     }
 }
