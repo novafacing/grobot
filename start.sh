@@ -10,7 +10,7 @@ EXE=$(cargo exe --release | grep controller)
 
 echo "Killing any existing grobot processes"
 
-sudo pkill grobot
+sudo pkill controller
 
 echo "Running grobot.."
 
