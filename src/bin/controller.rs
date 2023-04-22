@@ -54,7 +54,7 @@ struct Args {
     #[clap(short, long, default_value_t = PORT)]
     // Port
     port: u16,
-    #[clap(short, long, default_value_t = BIND_ADDR)]
+    #[clap(short = 'L', long, default_value_t = BIND_ADDR)]
     // Listen address
     listen_addr: Ipv4Addr,
 }
