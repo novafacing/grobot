@@ -41,7 +41,7 @@ struct Args {
     /// Path to a configuration file in TOML format. Examples of configurations can be found
     /// in the repository.
     config_file: PathBuf,
-    #[clap(short, long, default_value_t = Level::Info)]
+    #[clap(short, long, default_value_t = Level::INFO)]
     /// Logging level
     log_level: Level,
 }
