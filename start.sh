@@ -6,7 +6,7 @@ pushd "${SCRIPT_DIR}"
 
 cargo build --release
 
-EXE=$(cargo exe --release)
+EXE=$(cargo exe --release | grep controller)
 
 echo "Killing any existing grobot processes"
 
