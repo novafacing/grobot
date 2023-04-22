@@ -14,6 +14,6 @@ sudo pkill grobot
 
 echo "Running grobot.."
 
-sudo bash -c "nohup \"${EXE}\" > /var/log/grobot.log 2>&1 &"
+sudo bash -c "nohup \"${EXE}\" configs/default.toml > /var/log/grobot.log 2>&1 &"
 
 echo "Grobot running..."

@@ -1,7 +1,7 @@
-use std::{env, path::Path, sync::Arc};
+use std::path::Path;
 
-use anyhow::{bail, ensure, Context, Error, Result};
-use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Timelike};
+use anyhow::{ensure, Context, Error, Result};
+use chrono::{DateTime, Local, NaiveDateTime, TimeZone};
 use dht22_pi::{read as dht22_read, Reading};
 use ringbuffer::{AllocRingBuffer, RingBuffer, RingBufferExt, RingBufferWrite};
 use rppal::{gpio::OutputPin, pwm::Pwm};
