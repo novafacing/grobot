@@ -23,7 +23,7 @@ use tokio::{
     time::sleep,
 };
 use tracing::{info, subscriber::set_global_default, Level};
-use tracing_appender::{non_blocking, rolling::hourly};
+use tracing_appender::{non_blocking, rolling::daily};
 use tracing_subscriber::FmtSubscriber;
 
 // NF-F12 industialPPC Fan PWM Frequency
@@ -206,7 +206,7 @@ async fn main() -> Result<()> {
 
     let config = Config::from_file(&args.config_file).await?;
 
-    let file_appender = hourly("/var/log", "grobot.log");
+    let file_appender = daily("/var/log", "grobot.log");
     let (non_blocking, _guard) = non_blocking(file_appender);
 
     let subscriber = FmtSubscriber::builder()
