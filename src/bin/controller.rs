@@ -22,7 +22,7 @@ use tokio::{
     },
     time::sleep,
 };
-use tracing::{info, subscriber::set_global_default, Level};
+use tracing::{error, info, subscriber::set_global_default, Level};
 use tracing_appender::{non_blocking, rolling::daily};
 use tracing_subscriber::FmtSubscriber;
 
@@ -266,7 +266,9 @@ async fn main() -> Result<()> {
 
         info!("Broadcasting sensor readings: '{}'", msg);
 
-        sock.send_to(msg.as_bytes(), broadcast_addr).await?;
+        if let Err(e) = sock.send_to(msg.as_bytes(), broadcast_addr).await {
+            error!("Error sending message: {}", e);
+        }
 
         tx.send(Message::Environment((
             environment.temp(),
