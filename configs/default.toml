@@ -1,8 +1,8 @@
 [thresholds]
 min_humidity = 30.0
-max_humidity = 85.0
+max_humidity = 95.0
 min_temp = 62.0
-max_temp = 82.0
+max_temp = 86.0
 
 [fan]
 # Fan power as a percentage of the maximum power (100.0)
@@ -11,52 +11,28 @@ power = 75.0
 schedule = [
     { time = "00:00", action = "On" },
     { time = "00:10", action = "Off" },
-    { time = "01:00", action = "On" },
-    { time = "01:10", action = "Off" },
     { time = "02:00", action = "On" },
     { time = "02:10", action = "Off" },
-    { time = "03:00", action = "On" },
-    { time = "03:10", action = "Off" },
     { time = "04:00", action = "On" },
     { time = "04:10", action = "Off" },
-    { time = "05:00", action = "On" },
-    { time = "05:10", action = "Off" },
     { time = "06:00", action = "On" },
     { time = "06:10", action = "Off" },
-    { time = "07:00", action = "On" },
-    { time = "07:10", action = "Off" },
     { time = "08:00", action = "On" },
     { time = "08:10", action = "Off" },
-    { time = "09:00", action = "On" },
-    { time = "09:10", action = "Off" },
     { time = "10:00", action = "On" },
     { time = "10:10", action = "Off" },
-    { time = "11:00", action = "On" },
-    { time = "11:10", action = "Off" },
     { time = "12:00", action = "On" },
     { time = "12:10", action = "Off" },
-    { time = "13:00", action = "On" },
-    { time = "13:10", action = "Off" },
     { time = "14:00", action = "On" },
     { time = "14:10", action = "Off" },
-    { time = "15:00", action = "On" },
-    { time = "15:10", action = "Off" },
     { time = "16:00", action = "On" },
     { time = "16:10", action = "Off" },
-    { time = "17:00", action = "On" },
-    { time = "17:10", action = "Off" },
     { time = "18:00", action = "On" },
     { time = "18:10", action = "Off" },
-    { time = "19:00", action = "On" },
-    { time = "19:10", action = "Off" },
     { time = "20:00", action = "On" },
     { time = "20:10", action = "Off" },
-    { time = "21:00", action = "On" },
-    { time = "21:10", action = "Off" },
     { time = "22:00", action = "On" },
     { time = "22:10", action = "Off" },
-    { time = "23:00", action = "On" },
-    { time = "23:10", action = "Off" },
 ]
 
 [light]
@@ -64,6 +40,8 @@ schedule = [
 schedule = [
     { time = "06:00", action = "On" },
     { time = "11:00", action = "Off" },
+    { time = "12:30", action = "On" },
+    { time = "14:30", action = "Off" },
     { time = "19:00", action = "On" },
     { time = "23:00", action = "Off" },
 ]
