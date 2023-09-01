@@ -1,5 +1,8 @@
 # Grobot
 
+<img width="564" alt="image" src="https://github.com/novafacing/grobot/assets/30083762/8bd00934-ba2c-4d04-80d9-85f9ea16446c">
+
+
 Control your Ikea Rudsta grow cabinet with a Raspberry Pi 3B+! Includes schematics,
 diagrams, a BOM, and all the tutorials you need to create a custom grow cabinet for
 houseplants, herbs, and propagation.
