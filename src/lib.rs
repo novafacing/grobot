@@ -188,6 +188,22 @@ impl Light {
     }
 }
 
+pub struct Mist(OutputPin);
+
+impl Mist {
+    pub fn new(pin: OutputPin) -> Self {
+        Self(pin)
+    }
+
+    pub fn on(&mut self) {
+        self.0.set_low();
+    }
+
+    pub fn off(&mut self) {
+        self.0.set_high();
+    }
+}
+
 pub struct Fan((Pwm, FanPower));
 
 impl Fan {
@@ -252,6 +268,11 @@ pub struct LightConfig {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct MistConfig {
+    schedule: Vec<Event>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct ThresholdConfig {
     min_temp: f32,
     min_humidity: f32,
@@ -263,6 +284,7 @@ pub struct ThresholdConfig {
 pub struct Config {
     fan: FanConfig,
     light: LightConfig,
+    mist: MistConfig,
     thresholds: ThresholdConfig,
 }
 
@@ -294,6 +316,34 @@ impl Config {
 
     pub fn light_off(&mut self, time: &DateTime<Local>, environment: (f32, f32)) -> bool {
         !self.light_on(time, environment)
+    }
+
+    pub fn mist_on(&mut self, time: &DateTime<Local>, environment: (f32, f32)) -> bool {
+        let (temp, humidity) = environment;
+        // Check if the mist should be on at the given time by:
+        // * Sorting the schedule by time
+        // * Bucketing the schedule into pairs of on/off events
+        // * Checking if the time is between any of the on/off pairs
+        let mist_on_schedule = self.mist.schedule.chunks(2).any(|pair| {
+            let on = &pair[0];
+            let off = &pair[1];
+
+            on.time.time() <= time.time() && off.time.time() > time.time()
+        });
+
+        // Check if the mist should be on due to the humidity
+        // If humidity is too high, we turn on to burn off the excess
+        // If temperature is too high, we turn off the mist to prevent overheating
+        // If temperature is too low, we turn on the mist to increase the temperature
+        let mist_on_environment = humidity < self.thresholds.min_humidity;
+
+        let mist_off_environment = humidity > self.thresholds.max_temp;
+
+        (mist_on_schedule || mist_on_environment) && !mist_off_environment
+    }
+
+    pub fn mist_off(&mut self, time: &DateTime<Local>, environment: (f32, f32)) -> bool {
+        !self.mist_on(time, environment)
     }
 
     pub fn fan_on(&mut self, time: &DateTime<Local>, environment: (f32, f32)) -> bool {
@@ -333,6 +383,7 @@ impl Config {
     pub fn setup(&mut self) -> Result<()> {
         // Sort the schedules by time ascending
         self.light.schedule.sort_by(|a, b| a.time.cmp(&b.time));
+        self.mist.schedule.sort_by(|a, b| a.time.cmp(&b.time));
         self.fan.schedule.sort_by(|a, b| a.time.cmp(&b.time));
 
         // Ensure the schedule is valid (this reduces to the same as checking open/close parens lol)
@@ -345,7 +396,18 @@ impl Config {
 
         ensure!(
             first_light.action == Action::On,
-            "Schedule must start with an On or Off event"
+            "Schedule must start with an On event"
+        );
+
+        let first_mist = self
+            .mist
+            .schedule
+            .first()
+            .context("Must have something in the schedule")?;
+
+        ensure!(
+            first_mist.action == Action::On,
+            "Schedule must start with an On event"
         );
 
         // Ensure the schedule is valid (this reduces to the same as checking open/close parens lol)

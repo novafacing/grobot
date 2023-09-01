@@ -30,6 +30,8 @@ use tracing_subscriber::FmtSubscriber;
 const FAN_PWM_FREQUENCY: f64 = 25_000.0f64;
 // Pin for relay CH1
 const LIGHT_PIN: u8 = 26;
+// Pin for relay CH3
+const MIST_PIN: u8 = 21;
 // Pin for temp/humidity sensor
 const SENSOR_PIN: u8 = 4;
 // Number of readings to take from the sensor before starting up
@@ -130,6 +132,65 @@ async fn light(mut rx: Receiver<Message>) -> Result<()> {
     Ok(())
 }
 
+async fn mist(mut rx: Receiver<Message>) -> Result<()> {
+    let gpio = Gpio::new()?;
+    let mist_pin = gpio.get(MIST_PIN)?;
+    let mut mist = Mist::new(mist_pin.into_output());
+    mist.off();
+
+    let mut config = if let Message::Setup(config) = rx.recv().await? {
+        info!(
+            "Mist thread received setup message with config {:?}",
+            config
+        );
+        config
+    } else {
+        bail!("Mist thread did not receive setup message");
+    };
+
+    let mut last_time = None;
+    let mut last_env = None;
+
+    loop {
+        match rx.recv().await? {
+            Message::Time(time) => {
+                info!("Mist thread received time update with time {:?}", time);
+                last_time = Some(time);
+            }
+            Message::Environment((temp, humidity)) => {
+                // Any environment related processing here
+                info!(
+                    "Mist thread received environment update with temp {}F, humidity {}%",
+                    temp, humidity
+                );
+                last_env = Some((temp, humidity));
+            }
+            Message::Exit => {
+                // Exit the loop and the thread
+                info!("Received exit message on mist thread, exiting");
+                break;
+            }
+            _ => {
+                // Ignore other messages
+            }
+        }
+
+        if let Some(time) = last_time {
+            if let Some((temp, humidity)) = last_env {
+                if config.mist_on(&time, (temp, humidity)) {
+                    info!("Mist thread turning light on");
+                    mist.on();
+                } else {
+                    info!("Mist thread turning light off");
+                    mist.off();
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn fan(mut rx: Receiver<Message>) -> Result<()> {
     // Start up the fan at 0% power
     let fan_pwm = Pwm::with_frequency(
@@ -219,6 +280,7 @@ async fn main() -> Result<()> {
     let (tx, _rx): (Sender<Message>, Receiver<Message>) = broadcast(16);
     let fan_rx = tx.subscribe();
     let light_rx = tx.subscribe();
+    let mist_rx = tx.subscribe();
 
     let (stop_tx, mut stop_rx) = oneshot();
 
@@ -230,6 +292,7 @@ async fn main() -> Result<()> {
 
     spawn(light(light_rx));
     spawn(fan(fan_rx));
+    spawn(mist(mist_rx));
 
     tx.send(Message::Setup(config))?;
 
