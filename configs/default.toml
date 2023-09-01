@@ -45,3 +45,15 @@ schedule = [
     { time = "19:00", action = "On" },
     { time = "23:00", action = "Off" },
 ]
+
+[mist]
+schedule = [
+    { time = "07:00", action = "On" },
+    { time = "07:04", action = "Off" },
+    { time = "12:00", action = "On" },
+    { time = "12:04", action = "Off" },
+    { time = "17:00", action = "On" },
+    { time = "17:04", action = "Off" },
+    { time = "21:00", action = "On" },
+    { time = "21:04", action = "Off" },
+]

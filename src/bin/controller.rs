@@ -2,7 +2,7 @@ use anyhow::{bail, Result};
 use chrono::{DateTime, Local};
 use clap::Parser;
 use dht22_pi::read as dht22_read;
-use grobot::{Config, Environment, Fan, Light, PORT};
+use grobot::{Config, Environment, Fan, Light, PORT, Mist};
 use rppal::{
     gpio::Gpio,
     pwm::{Channel, Polarity, Pwm},
