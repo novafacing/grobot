@@ -206,6 +206,41 @@ we seal everything back up.
 Bust out your hot glue gun and hit the relay connection with some hot glue so it doesn't 
 fall out. More is more, don't worry about over-gluing. Take a look at [the overview](#preparing-your-project-box) to see how I glued it.
 
+# Wiring the Mister
+
+If you add a mister, we'll wire it up to the Raspberry pi as well.
+
+## Step 1: Wire the power cord
+
+The plug my mister came with has a wall wart transformer to a barrel plug, which connects up 
+to the actual mist generator. First, cut the cord on the wall wart side to expose the positive
+and negative wires (there is no ground wire in this mister's power cord, but if yours has one,
+you'll want to wire that the same way we wire the negative wire).
+
+![image](https://github.com/novafacing/grobot/assets/30083762/d7f138cf-ce0f-4001-9ca2-7b17e3e20a4e)
+
+Once you've cut it, strip a half to a quarter inch from the ends of all the wires. If they're
+too long, you can bend them back over like I had to.
+
+![image](https://github.com/novafacing/grobot/assets/30083762/3f6fea33-9469-4204-bf1e-3063adbe459c)
+
+Wire the positive side through the NC terminals in the relay. I used channel 3 because channel
+2 is hard to access. Next, twist the negative wires together and tin them together to make the
+connection as good as possible.
+
+![image](https://github.com/novafacing/grobot/assets/30083762/405246e1-ea4e-46c9-bb2d-795efee5d1d9)
+
+And finally, tape it up! You can do this better, use a wire nut, whatever you'd like, as long
+as it doesn't touch anything.
+
+![image](https://github.com/novafacing/grobot/assets/30083762/4e26254f-db90-40ae-b933-9443cd9e0c3c)
+
+## Step 2: Test the mister
+
+To test the mister, use the same method as testing the lights, but use pin 21 instead of 26.
+On this relay hat, pin 26 corresponds to channel 1, pin 20 to channel 2, and pin 21 to 
+channel 3.
+
 # Wiring the Fans
 
 ## Step 1: Connect GPIO to Fan Splitters
